@@ -37,20 +37,25 @@ ENV/
 *~
 .DS_Store
 
-# Project specific
+# Project specific - New structure
+bg/
+green/
+output/
+test_output/
+
+# Project specific - Old structure (legacy)
 output_10fps_1080p/
 output_with_background/
-test_output/
 test_output_cv/
 douga/
+01.png
+
+# Video files
 *.mp4
 *.mov
 *.avi
 *.mkv
 *.zip
-
-# Keep sample background image is optional
-# 01.png
 
 # UV lock file
 uv.lock
