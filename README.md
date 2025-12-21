@@ -8,6 +8,8 @@ OpenCVを使ってグリーンバック（グリーンスクリーン）動画�
 - **複数背景対応**: 最大2枚の背景画像から選択可能
 - **一括処理**: green/フォルダ内の全動画を自動処理
 - **パラメータ調整**: HSV色空間で正確な緑色検出
+- **サイズ・配置調整**: 人物のサイズと位置を自由に調整
+- **輝度マッチング**: 背景と人物の明るさを自動調整して自然な合成
 - **テスト機能**: 1つの動画でパラメータをテスト
 
 ## 必要な環境
@@ -92,18 +94,28 @@ Background-changer/
 まず1つの動画でパラメータをテストします：
 
 ```bash
-# デフォルトパラメータでテスト
+# デフォルトパラメータでテスト（人物0.7倍、上部20%に配置、輝度マッチングON）
 uv run python test_run.py
 
 # 背景画像を指定してテスト（2枚ある場合）
 uv run python test_run.py --bg 1
 uv run python test_run.py --bg 2
 
-# パラメータを調整してテスト
+# サイズと配置を調整
+uv run python test_run.py --scale 0.5 --y-position 0.1    # 小さく上部に
+uv run python test_run.py --scale 1.0 --y-position 0.5    # 原寸大で中央に
+
+# 輝度マッチングを無効化（元の色を維持）
+uv run python test_run.py --no-brightness-match
+
+# HSVパラメータを調整
 uv run python test_run.py --lower 30 60 60 --upper 90 255 255
 
 # 特定の動画でテスト
 uv run python test_run.py --video your_video.mp4
+
+# 全てを組み合わせ
+uv run python test_run.py --scale 0.6 --y-position 0.15 --lower 30 60 60
 ```
 
 テスト結果は `test_output/` フォルダに保存されます。
@@ -113,30 +125,110 @@ uv run python test_run.py --video your_video.mp4
 テスト結果が良ければ、全動画を一括処理：
 
 ```bash
-# 全動画を処理
+# 全動画を処理（デフォルト設定）
 uv run python run.py
 
 # 背景画像を指定して処理（2枚ある場合）
 uv run python run.py --bg 1
 uv run python run.py --bg 2
 
-# パラメータを調整して処理
-uv run python run.py --lower 30 60 60 --upper 90 255 255
+# サイズと配置を調整して処理
+uv run python run.py --scale 0.7 --y-position 0.2
+
+# 輝度マッチング無効で処理
+uv run python run.py --no-brightness-match
+
+# 全パラメータを指定して処理
+uv run python run.py --scale 0.6 --y-position 0.15 --lower 30 60 60 --upper 90 255 255
 ```
 
 処理結果は `output/` フォルダに保存されます。
 
 ## パラメータ調整
 
+### サイズと配置
+
+人物のサイズと画面上の位置を調整できます。
+
+**--scale** (デフォルト: 0.7)
+- `0.5`: 人物を小さく（50%）
+- `0.7`: 標準（70%）
+- `1.0`: 原寸大（100%）
+
+**--y-position** (デフォルト: 0.2)
+- `0.0`: 画面上端
+- `0.2`: 上部（デフォルト）
+- `0.5`: 中央
+- `0.8`: 下部
+
+```bash
+# 例: 人物を小さく画面上部に配置
+uv run python run.py --scale 0.5 --y-position 0.1
+```
+
+### 輝度マッチング
+
+人物と背景の明るさを自動調整して自然な合成を実現します。
+
+**デフォルト: ON（自動調整）**
+- 背景の平均輝度を計算
+- 人物の輝度を背景に合わせて調整
+- 色温度（彩度）も軽く調整
+
+**--no-brightness-match**
+- 輝度マッチングを無効化
+- 元の色を維持したい場合に使用
+
+```bash
+# 例: 輝度マッチングを無効化
+uv run python run.py --no-brightness-match
+```
+
+### HSVパラメータ
+
 HSV色空間のパラメータを調整することで、様々な緑色に対応できます。
 
-### HSVパラメータの意味
-
+**HSVパラメータの意味:**
 - **H (色相)**: 0-179 (緑色は35-85あたり)
 - **S (彩度)**: 0-255 (色の鮮やかさ)
 - **V (明度)**: 0-255 (明るさ)
 
 ### 問題別の調整方法
+
+#### 人物が浮いて見える・色が合わない
+
+輝度マッチング機能を使用します（デフォルトON）：
+
+```bash
+# デフォルトで輝度マッチングON
+uv run python test_run.py
+
+# より強く調整したい場合は背景画像を変更
+```
+
+#### 人物が大きすぎる・小さすぎる
+
+スケールを調整します：
+
+```bash
+# 人物を小さく
+uv run python test_run.py --scale 0.5
+
+# 人物を大きく
+uv run python test_run.py --scale 1.0
+```
+
+#### 人物の位置を変更したい
+
+Y位置を調整します：
+
+```bash
+# 上部に配置
+uv run python test_run.py --y-position 0.1
+
+# 中央に配置
+uv run python test_run.py --y-position 0.5
+```
 
 #### 緑色が背景に残ってしまう場合
 
@@ -154,22 +246,6 @@ uv run python test_run.py --lower 30 60 60 --upper 90 255 255
 uv run python test_run.py --lower 40 100 100 --upper 80 255 255
 ```
 
-#### 明るい緑だけ抜きたい場合
-
-V（明度）の下限を上げます：
-
-```bash
-uv run python test_run.py --lower 35 80 120 --upper 85 255 255
-```
-
-#### 暗い緑も含めて抜きたい場合
-
-V（明度）の下限を下げます：
-
-```bash
-uv run python test_run.py --lower 35 80 40 --upper 85 255 255
-```
-
 ## ファイル説明
 
 - **run.py** - 全動画を一括処理するメインスクリプト
@@ -185,6 +261,9 @@ uv run python test_run.py --lower 35 80 40 --upper 85 255 255
 - **フレームレート**: 元動画のFPSを維持
 - **解像度**: 元動画の解像度を維持
 - **背景画像**: 自動的に動画サイズにリサイズ
+- **人物スケール**: デフォルト0.7倍（調整可能）
+- **人物配置**: デフォルト上部20%（調整可能）
+- **輝度マッチング**: デフォルトON（背景の明るさに自動調整）
 
 ## トラブルシューティング
 

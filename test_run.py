@@ -11,7 +11,13 @@
     # 背景画像を指定してテスト
     uv run python test_run.py --bg 1
 
-    # パラメータを調整してテスト
+    # サイズと配置を調整
+    uv run python test_run.py --scale 0.5 --y-position 0.1
+
+    # 輝度マッチングを無効化
+    uv run python test_run.py --no-brightness-match
+
+    # HSVパラメータを調整
     uv run python test_run.py --lower 30 60 60 --upper 90 255 255
 
     # 特定の動画でテスト
@@ -67,6 +73,26 @@ def main():
         help='緑色検出の上限値。デフォルト: 85 255 255'
     )
 
+    parser.add_argument(
+        '--scale',
+        type=float,
+        default=0.7,
+        help='人物のサイズ倍率（デフォルト: 0.7）'
+    )
+
+    parser.add_argument(
+        '--y-position',
+        type=float,
+        default=0.2,
+        help='人物の縦位置 0.0=上端, 1.0=下端（デフォルト: 0.2）'
+    )
+
+    parser.add_argument(
+        '--no-brightness-match',
+        action='store_true',
+        help='輝度マッチングを無効化'
+    )
+
     args = parser.parse_args()
 
     # ディレクトリセットアップ
@@ -113,9 +139,10 @@ def main():
     # パラメータ
     lower_green = tuple(args.lower)
     upper_green = tuple(args.upper)
+    brightness_match = not args.no_brightness_match
 
     # 出力ファイル名
-    param_str = f"L{lower_green[0]}_{lower_green[1]}_{lower_green[2]}_U{upper_green[0]}_{upper_green[1]}_{upper_green[2]}"
+    param_str = f"s{args.scale}_y{args.y_position}_L{lower_green[0]}_{lower_green[1]}_{lower_green[2]}"
     output_name = f"test_{test_video.stem}_{param_str}.mp4"
     output_path = test_output_dir / output_name
 
@@ -127,6 +154,9 @@ def main():
     print(f"背景画像: {bg_image.name}")
     print(f"Lower HSV: {lower_green}")
     print(f"Upper HSV: {upper_green}")
+    print(f"人物スケール: {args.scale}")
+    print(f"Y位置: {args.y_position}")
+    print(f"輝度マッチング: {'OFF' if args.no_brightness_match else 'ON'}")
     print(f"出力: {output_path}")
     print("=" * 60 + "\n")
 
@@ -135,7 +165,10 @@ def main():
         bg_image,
         output_path,
         lower_green=lower_green,
-        upper_green=upper_green
+        upper_green=upper_green,
+        scale=args.scale,
+        y_position=args.y_position,
+        brightness_match=brightness_match
     )
 
     if success:
@@ -144,18 +177,21 @@ def main():
         print(f"出力ファイル: {output_path}")
         print("=" * 60)
         print("\nパラメータ調整のヒント:")
-        print("【緑色が背景に残る場合】")
+        print("【サイズと配置】")
+        print("  人物を小さく: --scale 0.5")
+        print("  人物を大きく: --scale 1.0")
+        print("  上部に配置: --y-position 0.0")
+        print("  中央に配置: --y-position 0.5")
+        print("  下部に配置: --y-position 0.8")
+        print("\n【輝度の問題】")
+        print("  人物が浮いて見える: デフォルトで輝度マッチングON（自動調整）")
+        print("  元の色を維持したい: --no-brightness-match")
+        print("\n【緑色が背景に残る場合】")
         print("  → 緑色検出の範囲を広げる")
         print("  例: --lower 30 60 60 --upper 90 255 255")
         print("\n【人物の一部が消える場合】")
         print("  → 緑色検出の範囲を狭める")
         print("  例: --lower 40 100 100 --upper 80 255 255")
-        print("\n【明るい緑だけ抜きたい場合】")
-        print("  → V（明度）の下限を上げる")
-        print("  例: --lower 35 80 120 --upper 85 255 255")
-        print("\n【暗い緑も含めて抜きたい場合】")
-        print("  → V（明度）の下限を下げる")
-        print("  例: --lower 35 80 40 --upper 85 255 255")
     else:
         print("\nテスト失敗")
         sys.exit(1)

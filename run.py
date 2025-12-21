@@ -156,8 +156,56 @@ def get_video_files(green_dir):
     return sorted(video_files)
 
 
+def adjust_brightness(person_img, person_mask, bg_img, bg_mask):
+    """
+    人物の輝度を背景に合わせて調整
+
+    Args:
+        person_img: 人物画像（BGR）
+        person_mask: 人物のマスク
+        bg_img: 背景画像（BGR）
+        bg_mask: 背景のマスク
+
+    Returns:
+        調整後の人物画像
+    """
+    # BGR → HSV変換
+    person_hsv = cv2.cvtColor(person_img, cv2.COLOR_BGR2HSV).astype(np.float32)
+    bg_hsv = cv2.cvtColor(bg_img, cv2.COLOR_BGR2HSV).astype(np.float32)
+
+    # 人物領域と背景領域の平均HSV値を計算
+    person_mean = cv2.mean(person_img, mask=person_mask)[:3]
+    bg_mean = cv2.mean(bg_img, mask=bg_mask)[:3]
+
+    # HSVで平均を計算
+    person_hsv_mean = cv2.mean(person_hsv, mask=person_mask)
+    bg_hsv_mean = cv2.mean(bg_hsv, mask=bg_mask)
+
+    # V（明度）の調整比率を計算
+    if person_hsv_mean[2] > 0:
+        brightness_ratio = bg_hsv_mean[2] / person_hsv_mean[2]
+    else:
+        brightness_ratio = 1.0
+
+    # 人物のV値を調整（0-255の範囲を維持）
+    person_hsv[:, :, 2] = np.clip(person_hsv[:, :, 2] * brightness_ratio, 0, 255)
+
+    # S（彩度）も軽く調整（色温度のマッチング）
+    if person_hsv_mean[1] > 0:
+        saturation_ratio = bg_hsv_mean[1] / person_hsv_mean[1]
+        # 彩度は控えめに調整（0.7倍の影響）
+        saturation_ratio = 1.0 + (saturation_ratio - 1.0) * 0.3
+        person_hsv[:, :, 1] = np.clip(person_hsv[:, :, 1] * saturation_ratio, 0, 255)
+
+    # HSV → BGR変換
+    adjusted = cv2.cvtColor(person_hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+    return adjusted
+
+
 def change_background(video_path, bg_image_path, output_path,
-                      lower_green=(35, 80, 80), upper_green=(85, 255, 255)):
+                      lower_green=(35, 80, 80), upper_green=(85, 255, 255),
+                      scale=0.7, y_position=0.2, brightness_match=True):
     """
     グリーンバック動画の背景を画像に置き換える
 
@@ -167,6 +215,9 @@ def change_background(video_path, bg_image_path, output_path,
         output_path: 出力動画パス
         lower_green: 緑色検出の下限値 (H, S, V)
         upper_green: 緑色検出の上限値 (H, S, V)
+        scale: 人物のサイズ倍率（デフォルト0.7）
+        y_position: 人物の縦位置（0.0=上端, 1.0=下端, デフォルト0.2）
+        brightness_match: 輝度マッチングを有効化（デフォルトTrue）
 
     Returns:
         bool: 成功したらTrue
@@ -193,6 +244,14 @@ def change_background(video_path, bg_image_path, output_path,
 
         # 背景画像をリサイズ
         bg_img = cv2.resize(bg_img_origin, (width, height))
+
+        # スケール後のサイズを計算
+        scaled_width = int(width * scale)
+        scaled_height = int(height * scale)
+
+        # 配置位置を計算（中央揃え、Y位置は指定値）
+        x_offset = (width - scaled_width) // 2
+        y_offset = int((height - scaled_height) * y_position)
 
         # 出力設定
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -227,10 +286,42 @@ def change_background(video_path, bg_image_path, output_path,
             mask = cv2.inRange(hsv, lower_green_array, upper_green_array)
             mask_inv = cv2.bitwise_not(mask)
 
+            # 人物部分を抽出
+            person = cv2.bitwise_and(frame, frame, mask=mask_inv)
+
+            # 人物をスケール
+            person_scaled = cv2.resize(person, (scaled_width, scaled_height))
+            mask_inv_scaled = cv2.resize(mask_inv, (scaled_width, scaled_height))
+
+            # 輝度マッチング
+            if brightness_match:
+                # 背景のマスクを作成（人物が配置される領域以外）
+                bg_mask = np.ones((height, width), dtype=np.uint8) * 255
+                bg_mask[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width] = 0
+
+                person_scaled = adjust_brightness(person_scaled, mask_inv_scaled, bg_img, bg_mask)
+
+            # 背景画像をコピー
+            final_frame = bg_img.copy()
+
+            # 人物を配置する領域を抽出
+            roi = final_frame[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width]
+
+            # マスクを3チャンネルに変換
+            mask_inv_scaled_3ch = cv2.cvtColor(mask_inv_scaled, cv2.COLOR_GRAY2BGR)
+
+            # 人物部分を合成（アルファブレンディング風に）
+            # マスクで人物以外を黒くする
+            person_area = cv2.bitwise_and(person_scaled, mask_inv_scaled_3ch)
+
+            # ROIから人物領域を除去
+            mask_scaled = cv2.bitwise_not(mask_inv_scaled)
+            mask_scaled_3ch = cv2.cvtColor(mask_scaled, cv2.COLOR_GRAY2BGR)
+            bg_area = cv2.bitwise_and(roi, mask_scaled_3ch)
+
             # 合成
-            bg_part = cv2.bitwise_and(bg_img, bg_img, mask=mask)
-            fg_part = cv2.bitwise_and(frame, frame, mask=mask_inv)
-            final_frame = cv2.add(bg_part, fg_part)
+            combined = cv2.add(person_area, bg_area)
+            final_frame[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width] = combined
 
             out.write(final_frame)
 
@@ -251,10 +342,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用例:
-  uv run python run.py                    # 背景画像を選択して実行
-  uv run python run.py --bg 1             # 1番目の背景画像を使用
-  uv run python run.py --bg 2             # 2番目の背景画像を使用
-  uv run python run.py --lower 30 60 60   # パラメータを調整
+  uv run python run.py                              # 背景画像を選択して実行
+  uv run python run.py --bg 1                       # 1番目の背景画像を使用
+  uv run python run.py --scale 0.5 --y-position 0.1 # 人物を小さく上部に配置
+  uv run python run.py --no-brightness-match        # 輝度マッチング無効
+  uv run python run.py --lower 30 60 60             # パラメータを調整
         """
     )
 
@@ -280,6 +372,26 @@ def main():
         default=[85, 255, 255],
         metavar=('H', 'S', 'V'),
         help='緑色検出の上限値 (H:0-179, S:0-255, V:0-255)'
+    )
+
+    parser.add_argument(
+        '--scale',
+        type=float,
+        default=0.7,
+        help='人物のサイズ倍率（デフォルト: 0.7）'
+    )
+
+    parser.add_argument(
+        '--y-position',
+        type=float,
+        default=0.2,
+        help='人物の縦位置 0.0=上端, 1.0=下端（デフォルト: 0.2）'
+    )
+
+    parser.add_argument(
+        '--no-brightness-match',
+        action='store_true',
+        help='輝度マッチングを無効化'
     )
 
     args = parser.parse_args()
@@ -308,12 +420,16 @@ def main():
     print(f"背景画像: {bg_image.name}")
     print(f"動画数: {len(video_files)}")
     print(f"HSV範囲: Lower{tuple(args.lower)} Upper{tuple(args.upper)}")
+    print(f"人物スケール: {args.scale}")
+    print(f"Y位置: {args.y_position}")
+    print(f"輝度マッチング: {'OFF' if args.no_brightness_match else 'ON'}")
     print(f"出力先: {output_dir}")
     print("=" * 60 + "\n")
 
     # パラメータ
     lower_green = tuple(args.lower)
     upper_green = tuple(args.upper)
+    brightness_match = not args.no_brightness_match
 
     # 処理
     success_count = 0
@@ -323,7 +439,8 @@ def main():
         output_name = video_file.stem + '_output.mp4'
         output_path = output_dir / output_name
 
-        if change_background(video_file, bg_image, output_path, lower_green, upper_green):
+        if change_background(video_file, bg_image, output_path, lower_green, upper_green,
+                           args.scale, args.y_position, brightness_match):
             success_count += 1
         else:
             failed_count += 1
