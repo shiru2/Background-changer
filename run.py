@@ -19,11 +19,12 @@
     output/      出力先（自動作成）
 """
 
+import argparse
+import sys
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
-import sys
-import argparse
 
 
 def get_script_dir():
@@ -83,7 +84,7 @@ def get_background_images(bg_dir):
     Returns:
         list: 背景画像のパスリスト
     """
-    extensions = ['*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.JPEG']
+    extensions = ["*.png", "*.jpg", "*.jpeg", "*.PNG", "*.JPG", "*.JPEG"]
     bg_images = []
 
     for ext in extensions:
@@ -147,7 +148,16 @@ def get_video_files(green_dir):
     Returns:
         list: 動画ファイルのパスリスト
     """
-    extensions = ['*.mp4', '*.mov', '*.avi', '*.mkv', '*.MP4', '*.MOV', '*.AVI', '*.MKV']
+    extensions = [
+        "*.mp4",
+        "*.mov",
+        "*.avi",
+        "*.mkv",
+        "*.MP4",
+        "*.MOV",
+        "*.AVI",
+        "*.MKV",
+    ]
     video_files = []
 
     for ext in extensions:
@@ -203,9 +213,16 @@ def adjust_brightness(person_img, person_mask, bg_img, bg_mask):
     return adjusted
 
 
-def change_background(video_path, bg_image_path, output_path,
-                      lower_green=(35, 80, 80), upper_green=(85, 255, 255),
-                      scale=0.7, y_position=0.2, brightness_match=True):
+def change_background(
+    video_path,
+    bg_image_path,
+    output_path,
+    lower_green=(35, 80, 80),
+    upper_green=(85, 255, 255),
+    scale=0.7,
+    y_position=0.2,
+    brightness_match=True,
+):
     """
     グリーンバック動画の背景を画像に置き換える
 
@@ -254,7 +271,7 @@ def change_background(video_path, bg_image_path, output_path,
         y_offset = int((height - scaled_height) * y_position)
 
         # 出力設定
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
         if not out.isOpened():
@@ -277,7 +294,10 @@ def change_background(video_path, bg_image_path, output_path,
             # 進捗表示
             if frame_count % 10 == 0 or frame_count == 1:
                 progress = (frame_count / total_frames) * 100
-                print(f"  Progress: {frame_count}/{total_frames} frames ({progress:.1f}%)", end='\r')
+                print(
+                    f"  Progress: {frame_count}/{total_frames} frames ({progress:.1f}%)",
+                    end="\r",
+                )
 
             # HSV変換
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -297,15 +317,22 @@ def change_background(video_path, bg_image_path, output_path,
             if brightness_match:
                 # 背景のマスクを作成（人物が配置される領域以外）
                 bg_mask = np.ones((height, width), dtype=np.uint8) * 255
-                bg_mask[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width] = 0
+                bg_mask[
+                    y_offset : y_offset + scaled_height,
+                    x_offset : x_offset + scaled_width,
+                ] = 0
 
-                person_scaled = adjust_brightness(person_scaled, mask_inv_scaled, bg_img, bg_mask)
+                person_scaled = adjust_brightness(
+                    person_scaled, mask_inv_scaled, bg_img, bg_mask
+                )
 
             # 背景画像をコピー
             final_frame = bg_img.copy()
 
             # 人物を配置する領域を抽出
-            roi = final_frame[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width]
+            roi = final_frame[
+                y_offset : y_offset + scaled_height, x_offset : x_offset + scaled_width
+            ]
 
             # マスクを3チャンネルに変換
             mask_inv_scaled_3ch = cv2.cvtColor(mask_inv_scaled, cv2.COLOR_GRAY2BGR)
@@ -321,7 +348,9 @@ def change_background(video_path, bg_image_path, output_path,
 
             # 合成
             combined = cv2.add(person_area, bg_area)
-            final_frame[y_offset:y_offset + scaled_height, x_offset:x_offset + scaled_width] = combined
+            final_frame[
+                y_offset : y_offset + scaled_height, x_offset : x_offset + scaled_width
+            ] = combined
 
             out.write(final_frame)
 
@@ -338,7 +367,7 @@ def change_background(video_path, bg_image_path, output_path,
 
 def main():
     parser = argparse.ArgumentParser(
-        description='グリーンバック動画背景置換ツール',
+        description="グリーンバック動画背景置換ツール",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用例:
@@ -347,51 +376,42 @@ def main():
   uv run python run.py --scale 0.5 --y-position 0.1 # 人物を小さく上部に配置
   uv run python run.py --no-brightness-match        # 輝度マッチング無効
   uv run python run.py --lower 30 60 60             # パラメータを調整
-        """
+        """,
     )
 
-    parser.add_argument(
-        '--bg',
-        type=int,
-        help='使用する背景画像の番号（1または2）'
-    )
+    parser.add_argument("--bg", type=int, help="使用する背景画像の番号（1または2）")
 
     parser.add_argument(
-        '--lower',
+        "--lower",
         type=int,
         nargs=3,
         default=[35, 80, 80],
-        metavar=('H', 'S', 'V'),
-        help='緑色検出の下限値 (H:0-179, S:0-255, V:0-255)'
+        metavar=("H", "S", "V"),
+        help="緑色検出の下限値 (H:0-179, S:0-255, V:0-255)",
     )
 
     parser.add_argument(
-        '--upper',
+        "--upper",
         type=int,
         nargs=3,
         default=[85, 255, 255],
-        metavar=('H', 'S', 'V'),
-        help='緑色検出の上限値 (H:0-179, S:0-255, V:0-255)'
+        metavar=("H", "S", "V"),
+        help="緑色検出の上限値 (H:0-179, S:0-255, V:0-255)",
     )
 
     parser.add_argument(
-        '--scale',
-        type=float,
-        default=0.7,
-        help='人物のサイズ倍率（デフォルト: 0.7）'
+        "--scale", type=float, default=0.7, help="人物のサイズ倍率（デフォルト: 0.7）"
     )
 
     parser.add_argument(
-        '--y-position',
+        "--y-position",
         type=float,
         default=0.2,
-        help='人物の縦位置 0.0=上端, 1.0=下端（デフォルト: 0.2）'
+        help="人物の縦位置 0.0=上端, 1.0=下端（デフォルト: 0.2）",
     )
 
     parser.add_argument(
-        '--no-brightness-match',
-        action='store_true',
-        help='輝度マッチングを無効化'
+        "--no-brightness-match", action="store_true", help="輝度マッチングを無効化"
     )
 
     args = parser.parse_args()
@@ -436,11 +456,19 @@ def main():
     failed_count = 0
 
     for video_file in video_files:
-        output_name = video_file.stem + '_output.mp4'
+        output_name = video_file.stem + "_output.mp4"
         output_path = output_dir / output_name
 
-        if change_background(video_file, bg_image, output_path, lower_green, upper_green,
-                           args.scale, args.y_position, brightness_match):
+        if change_background(
+            video_file,
+            bg_image,
+            output_path,
+            lower_green,
+            upper_green,
+            args.scale,
+            args.y_position,
+            brightness_match,
+        ):
             success_count += 1
         else:
             failed_count += 1
